@@ -88,3 +88,6 @@ class ScriptWriter:
         lastFrame = max(projLastFrames)+max(projOffsets)
         root["first_frame"].setValue(firstFrame)
         root["last_frame"].setValue(lastFrame)
+
+if __name__ == "__main__":
+    pass

@@ -49,33 +49,37 @@ def bakeSequenceScale(s):
 
     #create shot render cam
     renderCam = mc.shot(s, cc=True, q=True)
-    copiedRenderCam = mc.duplicate(renderCam, name=renderCam+"_baked"+s, un=True)[0]
+    copiedRenderCam = mc.duplicate(renderCam, name=renderCam+"_baked_"+s, un=True)[0]
     print "copied render cam for ", s, " : ", copiedRenderCam
 
+    #shot sequence vars
+    seq_startTime = mc.shot(s, sst=True, q=True)
+    seq_endTime = mc.shot(s, set=True, q=True)
+    seq_duration = mc.shot(s, sequenceDuration=True, q=True)
+
     #get shot info
-    startTime = math.floor(mc.shot(s, st=True, q=True))
-    endTime = math.floor(mc.shot(s, et=True, q=True))
+    #this assumes start time is never subframe 
+    startTime = mc.shot(s, st=True, q=True)
+    #get actual end time, api endtime doesnt return subframe.
+    mc.sequenceManager(currentTime=seq_endTime)
+    endTime = mc.currentTime(q=True)
+
 
     print renderCam, ":"
     print "camera time:", startTime, "=>", endTime
 
     #set current time to start time
-    mc.currentTime(startTime, e=True)
-    noKeys = mc.setKeyframe(copiedRenderCam, hi="both", t=startTime)
-    print "Created ", noKeys, " initial keys"
-    mc.currentTime(endTime, e=True)
-    noKeys = mc.setKeyframe(copiedRenderCam, hi="both", t=endTime)
-    print "Created ", noKeys, " ending keys"
+    mc.setKeyframe(copiedRenderCam, hi="both", t=startTime)
+    print "Created initial keys"
+    mc.setKeyframe(copiedRenderCam, hi="both", t=endTime)
+    print "Created ending keys"
 
     #remove any keyframes that's not in this frame range
     print "cleanup keyframes."
-    mc.cutKey(copiedRenderCam, clear=True,time=(":"+str(startTime-1),), option="keys")
-    mc.cutKey(copiedRenderCam, clear=True,time=(str(endTime+1)+":",), option="keys")
+    mc.cutKey(copiedRenderCam, clear=True,time=(":"+str(startTime-0.01),), option="keys")
+    mc.cutKey(copiedRenderCam, clear=True,time=(str(endTime+0.01)+":",), option="keys")
 
-    #shot sequence vars
-    seq_startTime = math.floor(mc.shot(s, sst=True, q=True))
-    seq_endTime = math.floor(mc.shot(s, set=True, q=True))
-    seq_duration = mc.shot(s, sequenceDuration=True, q=True)
+    #set end time to scale
     scaleEndTime = startTime+seq_duration-1
 
     print "scaling to: ", startTime, " => ", scaleEndTime
@@ -86,19 +90,20 @@ def bakeSequenceScale(s):
 
 
 
-def camSeqRenderAll():
-    
+def camSeqRenderAll(deleteBakedCam=True):
+    '''
+    render all shots in sequence manager.
+    '''
+    #path variables
+    userMayaDir = os.getenv("MAYA")
+    fileRuleImages = mc.workspace("images",fre=True, q=True)[3:]
+    renderGlobalPath = os.path.join(userMayaDir, fileRuleImages)
+    renderTempPath = os.path.join(renderGlobalPath, "tmp")
+
+    #query render settings
     currentFile = mc.file(q=True, sn=True).split("/")[-1]
     fileName = os.path.splitext(currentFile)[0]
     outputDir = "/X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/"+fileName
-    
-    #delete current tmp if found
-    try:
-        callString = "rm -rf /X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/tmp/"
-        mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        output, error=mycmd.communicate()
-    except:
-        print "no temp dir found."
 
     #create shot output dir
     try:
@@ -108,14 +113,25 @@ def camSeqRenderAll():
         output, error=mycmd.communicate()
     except:
         print error
-        
+
+    #delete current tmp if found
+    try:
+        callString = "rm -rf /X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/tmp/"
+        mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        output, error=mycmd.communicate()
+    except:
+        print "no temp dir found."
+
+
     #get all shots in sequence
     allshots = mc.sequenceManager(lsh=True)
     
     renderedShots = []
     #playblast each shot
     for s in allshots:
-        
+
+        deleteCam = False
+
         #shot render cam vars
         renderCam = mc.shot(s, cc=True, q=True)
         startTime = math.floor(mc.shot(s, st=True, q=True))
@@ -138,7 +154,7 @@ def camSeqRenderAll():
         if seq_scale != 1.0:
             print "sequnce scale is not uniform. baking camera animation for endering."
             renderCam = bakeSequenceScale(s)
-
+            deleteCam = True
 
         print "start rendering: ", renderCam
         
@@ -162,6 +178,12 @@ def camSeqRenderAll():
             renderStartFrame += 1
             mel.eval('currentTime %s ;'%(renderStartFrame))
 
+        #remove render camera
+        if deleteBakedCam and deleteCam:
+            print "deleting camera: ", renderCam
+            mc.delete(renderCam)
+
+        #File Operations
         #rename and move shot renders
         shotDir = "/X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/"+s+"_"+str(offsetTime)+"/"
         callString = "mv /X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/tmp/ "+shotDir
@@ -175,63 +197,5 @@ def camSeqRenderAll():
 
 
 
-
-'''
-
-
-proc ProcessShot(string $curShot, string $targetCam[]) {
-string $shotCam = `shot -q -cc $curShot`;
-string $copiedCam[] = `duplicate -un $shotCam`;
-$shotCam = $copiedCam[0];
-
-int $camStartTime = `shot -q -startTime $curShot`;
-int $camEndTime = `shot -q -endTime $curShot`;
-currentTime $camStartTime;
-int $noKeys = `setKeyframe -hi "both" -t $camStartTime $shotCam`;
-
-print("Created "+$noKeys +" initial keys\n");
-currentTime $camEndTime;
-$noKeys = `setKeyframe -hi "both" -t $camEndTime $shotCam`;
-print("Created "+$noKeys +" ending keys\n");
-
-
-string $fromTime = $camStartTime+":"+$camEndTime;//`shot -q -startTime $curShot`+":"+`shot -q -endTime $curShot`;
-string $toTime = `shot -q -sequenceStartTime $curShot`+":"+`shot -q -sequenceEndTime $curShot`;
-
-
-print("Processing shot: "+$curShot+"=======\nCopying from "+$shotCam+" to "+$targetCam[1]+"\nTime from "+$fromTime+" to "+$toTime+"\n");
-$noKeys = `copyKey -time $fromTime -hi "both" $shotCam`;
-print("Copied "+$noKeys +" keys. ");
-
-$noKeys = `pasteKey -time $toTime -option "scaleReplace" $targetCam[0]`;
-print("Pasted "+$noKeys+" keys.\n==================================\n");
-delete $shotCam;
-}
-
-
-proc CreateSequenceRenderCam()
-{
-int $userStartTime = `currentTime -q`;
-string $targetCam[] = `camera`;
-int $timeLineStart = `playbackOptions -q -min`;
-int $timeLineEnd = `playbackOptions -q -max`;
-
-sequenceManager -ct $timeLineStart;
-string $nextShot = `sequenceManager -q -cs`;
-string $curShot = "";
-while($nextShot!=$curShot)
-{
-$curShot = $nextShot; 
-ProcessShot($curShot, $targetCam); 
-int $nextTime = `shot -q -sequenceEndTime $curShot`;
-$nextTime = $nextTime+1;
-if($nextTime > $timeLineEnd)break;
-print("Next time is "+$nextTime+"\n");
-sequenceManager -ct $nextTime;
-$nextShot = `sequenceManager -q -cs`;
-}
-currentTime $userStartTime;
-
-}
-
-'''
+    #done.
+    mc.warning("all shots submited for render, Check script editer for more detail.")
