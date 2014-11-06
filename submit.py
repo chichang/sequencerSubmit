@@ -1,17 +1,11 @@
 
-
 '''
 import sys
 sys.path.insert(0, "/USERS/chichang/workspace/")
-import sequencerSubmit.makeNukeScript as makeNukeScript
-reload(makeNukeScript)
-
-elements="/X/projects/luna/SHOTS/_default/chichang/images/elements/PV060_anim_v020"
-
-writer = makeNukeScript.ScriptWriter(elements)
-writer.write()
+import sequencerSubmit.submit as submit
+reload(submit)
+submit.camSeqRenderAll()
 '''
-
 
 
 ##Cam seq render
@@ -20,6 +14,7 @@ import math
 import maya.cmds as mc
 import maya.mel as mel
 import subprocess
+from .globals import *
 
 class sequenceRenderSubmit:
     #handling submit and start renders
@@ -95,15 +90,18 @@ def camSeqRenderAll(deleteBakedCam=True):
     render all shots in sequence manager.
     '''
     #path variables
-    userMayaDir = os.getenv("MAYA")
+    userShotDir = os.getenv("USER_SHOT_DIR")
     fileRuleImages = mc.workspace("images",fre=True, q=True)[3:]
-    renderGlobalPath = os.path.join(userMayaDir, fileRuleImages)
+    renderGlobalPath = os.path.join(userShotDir, fileRuleImages)
     renderTempPath = os.path.join(renderGlobalPath, "tmp")
 
     #query render settings
+    #todo
+
+    #setup output path
     currentFile = mc.file(q=True, sn=True).split("/")[-1]
     fileName = os.path.splitext(currentFile)[0]
-    outputDir = "/X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/"+fileName
+    outputDir = os.path.join(renderGlobalPath, fileName)
 
     #create shot output dir
     try:
@@ -115,6 +113,7 @@ def camSeqRenderAll(deleteBakedCam=True):
         print error
 
     #delete current tmp if found
+    #for my local hacking rendering only ...
     try:
         callString = "rm -rf /X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/tmp/"
         mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
@@ -161,6 +160,8 @@ def camSeqRenderAll(deleteBakedCam=True):
         #get cam transform
         camTransform = mc.listRelatives(renderCam, p=True)[0]
 
+
+        ###!!! Panel 4 Hardcoded
         #set current panel to the current shot cam
         mel.eval("lookThroughModelPanel %s modelPanel4;"%(renderCam))
 
@@ -183,10 +184,12 @@ def camSeqRenderAll(deleteBakedCam=True):
             print "deleting camera: ", renderCam
             mc.delete(renderCam)
 
+
         #File Operations
         #rename and move shot renders
-        shotDir = "/X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/"+s+"_"+str(offsetTime)+"/"
-        callString = "mv /X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/tmp/ "+shotDir
+        shotDirName = s+"_"+str(offsetTime)
+        shotDir = os.path.join(renderGlobalPath, shotDirName)
+        callString = "mv "+renderTempPath+" "+shotDir
         mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         output, error=mycmd.communicate()
         
@@ -195,7 +198,32 @@ def camSeqRenderAll(deleteBakedCam=True):
         mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         output, error=mycmd.communicate()
 
-
+    #write nuke comp
+    makeSeqComp(elementsDir=outputDir)
 
     #done.
     mc.warning("all shots submited for render, Check script editer for more detail.")
+
+
+
+def makeSeqComp(elementsDir, startFrame=None, endFrame=None):
+
+    print "making sequence comp script."
+
+    #nuke
+    nukePath = os.getenv("NUKE_HOME")
+    nukeAppPath = os.path.join(nukePath, "nuke")
+    print "running nuke from: ", nukeAppPath
+
+    callString = nukeAppPath
+    callString += " -t " + MAKE_SCRIPT_PY
+    callString += " -p " + elementsDir
+
+    print callString
+
+    #try:
+    mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    output, error=mycmd.communicate()
+    print output, error
+    #except:
+    #    print "error making sequence comp script."
