@@ -175,9 +175,6 @@ def camSeqRenderAll(deleteBakedCam=True):
             deleteCam = True
 
         print "start rendering: ", renderCam
-        
-        #get cam transform
-        camTransform = mc.listRelatives(renderCam, p=True)[0]
 
         #set current panel to the current shot cam
         mel.eval("lookThroughModelPanel %s %s;"%(renderCam, activePanel))
