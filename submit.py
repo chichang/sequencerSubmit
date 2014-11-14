@@ -1,14 +1,28 @@
+# #================================================================================
+# # Render the whole sequence in the Camera Sequencer
+# #================================================================================
+# '''
+# camSeqRenderAll
 
-'''
-import sys
-sys.path.insert(0, "/USERS/chichang/workspace/")
-import sequencerSubmit.submit as submit
-reload(submit)
-submit.camSeqRenderAll()
-'''
+# USAGE:
+# local render all shots in the camera sequencer. playblast style.
+# after render is done, this will also create a nuke script named sequence_comp.nk in the output filder
+# which have all the shots comped together.
 
+# NOTE:
+# 1.whatever renderer set in the rener globals will be useed to render.
+# 2.file is written out into the shot image/elements directory with the folder same as the maya file name.
+# 3.all the shots are rendered in sub-folders with the following naming: (shot name)_(time offset)
+# 4.in case sequence_comp.nk fail to create. use makeNukeScript_manual.py in the util folder.
 
-##Cam seq render
+# '''
+# import sys
+# sys.path.insert(0, "/USERS/chichang/workspace/")
+# import sequencerSubmit.submit as submit
+# reload(submit)
+# submit.camSeqRenderAll()
+# #================================================================================
+
 import os
 import math
 import maya.cmds as mc
@@ -22,21 +36,11 @@ class sequenceRenderSubmit:
         #initializing shot
         pass
 
-
 class sequenceShots:
     #handling shot info
     def __init__(self):
         #initializing shot
         pass
-
-
-
-import maya.cmds as mc
-import math
-allshots = mc.sequenceManager(lsh=True)
-#for s in allshots:
-    #print s, mc.shot(s, scale=True, q=True)
-
 
 def bakeSequenceScale(s):
     
@@ -84,7 +88,6 @@ def bakeSequenceScale(s):
     return copiedRenderCam
 
 
-
 def camSeqRenderAll(deleteBakedCam=True):
     '''
     render all shots in sequence manager.
@@ -95,13 +98,26 @@ def camSeqRenderAll(deleteBakedCam=True):
     renderGlobalPath = os.path.join(userShotDir, fileRuleImages)
     renderTempPath = os.path.join(renderGlobalPath, "tmp")
 
-    #query render settings
-    #todo
-
     #setup output path
     currentFile = mc.file(q=True, sn=True).split("/")[-1]
     fileName = os.path.splitext(currentFile)[0]
     outputDir = os.path.join(renderGlobalPath, fileName)
+
+    #if shot render already exists. stop the render
+    if os.path.exists(outputDir):
+        mc.warning("output directory already exist. render canceled.")
+        return
+    else:
+        pass
+
+    #query render settings
+    #todo
+    #check if active panel is 
+    allMdPanel = mc.getPanel(type="modelPanel")
+    activePanel = mc.getPanel(wf=True)
+    if activePanel not in allMdPanel:
+        mc.warning("please select the view you want to render.")
+        return
 
     #create shot output dir
     try:
@@ -114,13 +130,16 @@ def camSeqRenderAll(deleteBakedCam=True):
 
     #delete current tmp if found
     #for my local hacking rendering only ...
-    try:
-        callString = "rm -rf /X/projects/luna/SHOTS/"+os.getenv("SHOT")+"/chichang/images/elements/tmp/"
-        mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        output, error=mycmd.communicate()
-    except:
+    if os.path.exists(renderTempPath):
+        try:
+            print "deleting current tmp dir: ", renderTempPath
+            callString = "rm -rf "+renderTempPath
+            mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            output, error=mycmd.communicate()
+        except:
+            print error
+    else:
         print "no temp dir found."
-
 
     #get all shots in sequence
     allshots = mc.sequenceManager(lsh=True)
@@ -160,10 +179,8 @@ def camSeqRenderAll(deleteBakedCam=True):
         #get cam transform
         camTransform = mc.listRelatives(renderCam, p=True)[0]
 
-
-        ###!!! Panel 4 Hardcoded
         #set current panel to the current shot cam
-        mel.eval("lookThroughModelPanel %s modelPanel4;"%(renderCam))
+        mel.eval("lookThroughModelPanel %s %s;"%(renderCam, activePanel))
 
         #initialize render! note this will render out an image!
         mel.eval('currentTime %s ;'%(renderStartFrame))
@@ -184,11 +201,23 @@ def camSeqRenderAll(deleteBakedCam=True):
             print "deleting camera: ", renderCam
             mc.delete(renderCam)
 
-
         #File Operations
         #rename and move shot renders
         shotDirName = s+"_"+str(offsetTime)
         shotDir = os.path.join(renderGlobalPath, shotDirName)
+
+        #TODO: handle this better
+        #if there is a same found. this will move the tmp into it instead of rename tmp.
+        #for now just remove the old one assume it's from a preveus failed render
+        if os.path.exists(shotDir):
+            print "found "+shotDir+ "removing it..."
+            callString = "rm -rf "+shotDir
+            mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+            output, error=mycmd.communicate()
+        else:
+            pass
+
+        #rename the tmp dir to the shot name
         callString = "mv "+renderTempPath+" "+shotDir
         mycmd=subprocess.Popen(callString, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         output, error=mycmd.communicate()
@@ -201,10 +230,11 @@ def camSeqRenderAll(deleteBakedCam=True):
     #write nuke comp
     makeSeqComp(elementsDir=outputDir)
 
+    #display result
+    mc.confirmDialog( title='render finished: ', message=outputDir, button=['OK'], defaultButton='OK')
+
     #done.
     mc.warning("all shots submited for render, Check script editer for more detail.")
-
-
 
 def makeSeqComp(elementsDir, startFrame=None, endFrame=None):
 
